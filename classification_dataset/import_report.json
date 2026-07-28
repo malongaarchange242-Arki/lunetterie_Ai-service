@@ -1,0 +1,13 @@
+{
+  "total": 35023,
+  "copied": 34986,
+  "skipped": 0,
+  "errors": 37,
+  "by_source": {
+    "face-attributes-extra\\eyeglasses": 387,
+    "face-attributes-extra\\sunglasses": 244,
+    "test\\with_glasses": 1376,
+    "train\\with_glasses": 27513,
+    "val\\with_glasses": 5503
+  }
+}
