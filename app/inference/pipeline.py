@@ -94,6 +94,7 @@ def analyze_image(image_bytes: bytes) -> dict[str, Any]:
         shape = "unknown"
 
     shape_confidence = 0.75
+    shape_top3: list[dict[str, Any]] | None = None
     if get_classification_model() is not None:
         temp_path = ""
         try:
@@ -103,6 +104,10 @@ def analyze_image(image_bytes: bytes) -> dict[str, Any]:
             prediction = predict_shape(temp_path, model_path=settings.MODEL_PATH_CLASSIFICATION, class_names=get_class_names())
             shape = prediction.get("shape", shape)
             shape_confidence = float(prediction.get("confidence", 0.75)) / 100.0
+
+            probabilities = prediction.get("probabilities") or {}
+            ranked = sorted(probabilities.items(), key=lambda item: item[1], reverse=True)
+            shape_top3 = [{"shape": name, "confidence": round(prob / 100.0, 4)} for name, prob in ranked[:3]]
         except Exception:
             shape_confidence = 0.75
         finally:
@@ -122,6 +127,7 @@ def analyze_image(image_bytes: bytes) -> dict[str, Any]:
     return {
         "shape": shape,
         "shape_confidence": round(shape_confidence, 2),
+        "shape_top3": shape_top3,
         "color": color,
         "color_confidence": round(color_conf, 2),
         "material": material,

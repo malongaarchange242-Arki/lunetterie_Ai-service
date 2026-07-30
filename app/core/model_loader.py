@@ -34,30 +34,18 @@ def get_classification_model():
         else:
             try:
                 from torchvision.models import efficientnet_b0
+                from app.ai.train_shape_classifier import _rebuild_classifier_head
 
                 model = efficientnet_b0(pretrained=False)
                 checkpoint = torch.load(settings.MODEL_PATH_CLASSIFICATION, map_location=settings.DEVICE)
                 if isinstance(checkpoint, dict):
                     state = checkpoint.get("model_state_dict") or checkpoint.get("state_dict") or checkpoint
-                    class_names = checkpoint.get("classes") or class_names
-                    if isinstance(state, dict):
-                        if all(isinstance(v, torch.Tensor) for v in state.values()):
-                            num_classes = checkpoint.get("num_classes")
-                            if num_classes is None:
-                                for key, value in state.items():
-                                    if key.endswith("classifier.1.weight") or key.endswith("classifier.weight"):
-                                        num_classes = int(value.shape[0])
-                                        break
-                            if num_classes is None:
-                                model = None
-                            else:
-                                model.classifier[1] = torch.nn.Linear(model.classifier[1].in_features, int(num_classes))
-                                try:
-                                    model.load_state_dict(state, strict=False)
-                                except Exception:
-                                    stripped = {key.split("model.", 1)[-1]: value for key, value in state.items()}
-                                    model.load_state_dict(stripped, strict=False)
-                        else:
+                    class_names = checkpoint.get("classes") or checkpoint.get("class_names") or class_names
+                    if isinstance(state, dict) and all(isinstance(v, torch.Tensor) for v in state.values()):
+                        try:
+                            _rebuild_classifier_head(model, state)
+                            model.load_state_dict(state, strict=False)
+                        except Exception:
                             model = None
                     else:
                         model = None
@@ -75,4 +63,4 @@ def get_class_names():
     global class_names
     if class_names is None:
         get_classification_model()
-    return class_names or ["Rectangle", "Rond", "Ovale", "Carré", "Papillon"]
+    return class_names or ["aviateur", "carree", "ovale", "papillon", "rectangulaire", "ronde"]

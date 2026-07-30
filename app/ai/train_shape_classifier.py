@@ -18,6 +18,7 @@ from torchvision import datasets, models, transforms
 
 MODEL_CLASS_DISPLAY_NAMES = {
     "aviateur": "Pilote",
+    "carree": "Carrée",
     "carrée": "Carrée",
     "ovale": "Ovale",
     "papillon": "Papillon",
@@ -25,6 +26,38 @@ MODEL_CLASS_DISPLAY_NAMES = {
     "ronde": "Ronde",
 }
 IGNORED_SHAPE_LABELS = {"", "inconnu", "unknown", "class_0"}
+
+
+def _rebuild_classifier_head(model: nn.Module, state_dict: dict[str, "torch.Tensor"]) -> int:
+    """Reconstruit la tete de classification du modele a partir du state_dict du checkpoint.
+
+    Supporte a la fois l'ancienne tete (une seule Linear sur classifier[1]) et la
+    nouvelle tete a deux couches (Dropout -> Linear -> ReLU -> Dropout -> Linear)
+    utilisee par train_balanced.py. Renvoie le nombre de classes detecte.
+    """
+    classifier_indices = sorted(
+        {int(key.split(".")[1]) for key in state_dict if key.startswith("classifier.") and key.endswith(".weight")}
+    )
+    if not classifier_indices:
+        raise RuntimeError("Impossible de determiner la tete de classification depuis le checkpoint")
+
+    last_idx = classifier_indices[-1]
+    num_classes = int(state_dict[f"classifier.{last_idx}.weight"].shape[0])
+    in_features = model.classifier[1].in_features
+
+    if len(classifier_indices) == 1:
+        model.classifier[1] = nn.Linear(in_features, num_classes)
+    else:
+        hidden_dim = int(state_dict[f"classifier.{classifier_indices[0]}.weight"].shape[0])
+        model.classifier = nn.Sequential(
+            nn.Dropout(p=0.4),
+            nn.Linear(in_features, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(p=0.4),
+            nn.Linear(hidden_dim, num_classes),
+        )
+
+    return num_classes
 
 
 def build_transform() -> transforms.Compose:
@@ -220,7 +253,6 @@ def predict_shape(image_path: str, model_path: str = "best_shape_model.pth", cla
     # Load checkpoint (supports either raw state_dict or a dict with metadata)
     checkpoint = torch.load(model_path, map_location=device)
     checkpoint_classes = None
-    checkpoint_num_classes = None
     if isinstance(checkpoint, dict):
         # Prefer explicit model_state_dict when present
         if "model_state_dict" in checkpoint:
@@ -229,28 +261,12 @@ def predict_shape(image_path: str, model_path: str = "best_shape_model.pth", cla
             state_dict = checkpoint["state_dict"]
         else:
             state_dict = {k: v for k, v in checkpoint.items() if isinstance(v, torch.Tensor)}
-        checkpoint_classes = checkpoint.get("classes")
-        checkpoint_num_classes = checkpoint.get("num_classes")
+        checkpoint_classes = checkpoint.get("classes") or checkpoint.get("class_names")
     else:
         state_dict = checkpoint
 
-    # Determine number of output classes
-    num_classes = None
-    if checkpoint_num_classes is not None:
-        num_classes = int(checkpoint_num_classes)
-    else:
-        for k, v in state_dict.items():
-            if k.endswith("classifier.1.weight") or k.endswith("classifier.weight"):
-                try:
-                    num_classes = int(v.shape[0])
-                    break
-                except Exception:
-                    continue
-    if num_classes is None:
-        raise RuntimeError("Unable to determine number of classes from checkpoint")
-
-    # Recreate classifier head and load weights
-    model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
+    # Recreate classifier head (ancienne tete a 1 couche ou nouvelle tete a 2 couches) et charger les poids
+    num_classes = _rebuild_classifier_head(model, state_dict)
     model.to(device)
     try:
         model.load_state_dict(state_dict, strict=False)
@@ -292,9 +308,13 @@ def predict_shape(image_path: str, model_path: str = "best_shape_model.pth", cla
         display_names = display_names[: len(probs)]
 
     model_probabilities = {display_names[i]: float(probs[i]) for i in range(len(display_names))}
-    heuristic_result = ShapeEstimator().estimate(str(image_path))
-    merged = merge_shape_prediction(model_probabilities, heuristic_result)
-    return merged
+
+    best_name = max(model_probabilities, key=model_probabilities.get)
+    return {
+        "shape": best_name,
+        "confidence": round(model_probabilities[best_name] * 100.0, 2),
+        "probabilities": {name: round(prob * 100.0, 2) for name, prob in model_probabilities.items()},
+    }
 
 
 def main() -> None:

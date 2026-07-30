@@ -7,9 +7,15 @@ class AnalysisRequest(BaseModel):
     image_id: Optional[str] = None
 
 
+class ShapeCandidate(BaseModel):
+    shape: str
+    confidence: float
+
+
 class AnalysisResponse(BaseModel):
     shape: str
     shape_confidence: float
+    shape_top3: Optional[list[ShapeCandidate]] = None
     color: str
     color_confidence: float
     material: str

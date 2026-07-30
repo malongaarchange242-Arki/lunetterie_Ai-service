@@ -8,7 +8,7 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 
 class Settings(BaseSettings):
     MODEL_PATH_DETECTION: str = str(BASE_DIR / "app/models/detection/best.pt")
-    MODEL_PATH_CLASSIFICATION: str = str(BASE_DIR / "app/models/classification/best_shape_model.pth")
+    MODEL_PATH_CLASSIFICATION: str = str(BASE_DIR / "app/models/classification/best_shape_model_balanced.pth")
     MODEL_VERSION: str = "1.0.0"
     CONFIDENCE_THRESHOLD: float = 0.5
     DEVICE: str = "cpu"
