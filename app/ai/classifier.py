@@ -8,15 +8,17 @@ import numpy as np
 
 from app.classification.auto_color import estimate_color
 from app.classification.auto_mount import estimate_mount_type
+from app.core.config import settings
 
 
 class GlassesClassifier:
-    def __init__(self, use_cnn: bool = True, model_path: str = "ai-service/best_shape_model.pth"):
+    def __init__(self, use_cnn: bool = True, model_path: str | None = None):
         self.use_cnn = use_cnn
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         # Charger le modèle CNN
         if use_cnn:
+            model_path = model_path or settings.MODEL_PATH_CLASSIFICATION
             self.model, self.classes = self._load_model(model_path)
             self.transform = transforms.Compose([
                 transforms.Resize((224, 224)),
