@@ -82,6 +82,8 @@ class GlassesPredictor:
                 result["material"] = claude_result["material"]
             if claude_result.get("gender"):
                 result["gender"] = claude_result["gender"]
+            if claude_result.get("brand"):
+                result["product_fiche"]["brand"] = claude_result["brand"]
             result["confidence"] = max(result["confidence"], claude_result.get("confidence") or 0.0)
 
         return result

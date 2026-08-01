@@ -75,6 +75,7 @@ def _call_claude(image_path: str, prompt: str) -> dict[str, Any] | None:
             ],
         )
         text = "".join(block.text for block in message.content if getattr(block, "type", None) == "text")
+        logger.info("Réponse brute Claude vision: %s", text[:500])
         return _parse_json_reply(text)
     except Exception as exc:  # défensif: jamais bloquant pour l'appelant
         logger.warning("Appel Claude vision échoué: %s", exc)
@@ -82,7 +83,9 @@ def _call_claude(image_path: str, prompt: str) -> dict[str, Any] | None:
 
 
 def analyze_monture(image_path: str) -> dict[str, Any] | None:
-    """Détecte forme, couleur, matière et genre depuis la photo de face de la monture."""
+    """Détecte forme, couleur, matière, genre et marque depuis la photo de face de la monture.
+    La marque est souvent imprimée/gravée sur le verre ou la face (pas seulement sur la
+    branche) : ex. "Charlie Duke" imprimé sur le verre droit."""
     prompt = (
         "Tu analyses la photo d'une monture de lunettes pour un inventaire optique. "
         f"Réponds UNIQUEMENT avec un objet JSON strict (pas de texte autour), avec exactement ces clés :\n"
@@ -90,6 +93,7 @@ def analyze_monture(image_path: str) -> dict[str, Any] | None:
         f'"color" (une valeur EXACTE parmi {COLORS}, la couleur dominante de la monture),\n'
         f'"material" (une valeur EXACTE parmi {MATERIALS}),\n'
         f'"gender" (une valeur EXACTE parmi {GENDERS}, le style visé par la monture),\n'
+        '"brand" (le nom de marque lu s\'il est imprimé/gravé sur le verre ou la face, ex: "Charlie Duke", "Ray-Ban" — ou null si absent/illisible, n\'invente rien),\n'
         '"confidence" (nombre entre 0 et 1, ta confiance globale).\n'
         "Si une caractéristique est vraiment indéterminable, mets null pour cette clé."
     )
@@ -100,11 +104,17 @@ def analyze_monture(image_path: str) -> dict[str, Any] | None:
     def _valid(value: Any, allowed: list[str]) -> str | None:
         return value if isinstance(value, str) and value in allowed else None
 
+    def _clean(value: Any) -> str | None:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        return None
+
     return {
         "shape": _valid(result.get("shape"), SHAPES),
         "color": _valid(result.get("color"), COLORS),
         "material": _valid(result.get("material"), MATERIALS),
         "gender": _valid(result.get("gender"), GENDERS),
+        "brand": _clean(result.get("brand")),
         "confidence": float(result.get("confidence") or 0.85),
     }
 
