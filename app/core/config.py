@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     MODEL_VERSION: str = "1.0.0"
     CONFIDENCE_THRESHOLD: float = 0.5
     DEVICE: str = "cpu"
+    ANTHROPIC_API_KEY: str = ""
+    ANTHROPIC_MODEL: str = "claude-haiku-4-5-20251001"
 
     class Config:
         env_file = str(BASE_DIR / ".env")

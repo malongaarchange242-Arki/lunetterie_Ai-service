@@ -1,10 +1,14 @@
+import logging
 from pathlib import Path
 from typing import Any
 
+from app.ai import claude_vision
 from app.ai.classifier import GlassesClassifier
 from app.ai.detector import GlassesDetector
 from app.ai.image_utils import crop_image, resize_image, save_image
 from app.ai.shape_estimator import ShapeEstimator
+
+logger = logging.getLogger(__name__)
 
 
 class GlassesPredictor:
@@ -42,7 +46,7 @@ class GlassesPredictor:
         confidence = max((item["confidence"] for item in detections), default=0.0)
         confidence = max(confidence, shape_result.get("confidence", 0.0))
 
-        return {
+        result = {
             "detected": detected,
             "confidence": round(confidence, 4),
             "frame_shape": classification["frame_shape"],
@@ -50,6 +54,7 @@ class GlassesPredictor:
             "material": classification["material"],
             "has_branches": classification["has_branches"],
             "mount_type": classification["mount_type"],
+            "gender": None,
             "crop_path": crop_path,
             "product_fiche": {
                 "name": "Monture à compléter",
@@ -58,3 +63,25 @@ class GlassesPredictor:
                 "reference": None,
             },
         }
+
+        # Claude vision : plus fiable que le pipeline YOLO local sur forme/couleur/matière/genre.
+        # Repli silencieux sur les résultats locaux ci-dessus si la clé API est absente, l'appel
+        # échoue, ou que Claude ne renvoie rien d'exploitable pour un champ donné.
+        try:
+            claude_result = claude_vision.analyze_monture(str(path))
+        except Exception as exc:  # défensif: ne doit jamais faire échouer l'analyse locale
+            logger.warning("Analyse Claude monture indisponible: %s", exc)
+            claude_result = None
+
+        if claude_result:
+            if claude_result.get("shape"):
+                result["frame_shape"] = claude_result["shape"]
+            if claude_result.get("color"):
+                result["color"] = claude_result["color"]
+            if claude_result.get("material"):
+                result["material"] = claude_result["material"]
+            if claude_result.get("gender"):
+                result["gender"] = claude_result["gender"]
+            result["confidence"] = max(result["confidence"], claude_result.get("confidence") or 0.0)
+
+        return result
