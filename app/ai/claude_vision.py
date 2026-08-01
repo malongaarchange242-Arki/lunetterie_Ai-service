@@ -75,9 +75,13 @@ def _call_claude(image_path: str, prompt: str) -> dict[str, Any] | None:
             ],
         )
         text = "".join(block.text for block in message.content if getattr(block, "type", None) == "text")
+        # print() en plus de logger.info(): pm2 capture le stdout brut quelle que soit la config
+        # de logging de l'appli, donc cette ligne est garantie de sortir dans les logs.
+        print(f"[claude_vision] réponse brute: {text[:500]}", flush=True)
         logger.info("Réponse brute Claude vision: %s", text[:500])
         return _parse_json_reply(text)
     except Exception as exc:  # défensif: jamais bloquant pour l'appelant
+        print(f"[claude_vision] appel échoué: {exc}", flush=True)
         logger.warning("Appel Claude vision échoué: %s", exc)
         return None
 
