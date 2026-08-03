@@ -98,7 +98,7 @@ def analyze_monture(image_path: str) -> dict[str, Any] | None:
         f'"color" (une valeur EXACTE parmi {COLORS}, la couleur dominante de la monture),\n'
         f'"material" (une valeur EXACTE parmi {MATERIALS}),\n'
         f'"gender" (une valeur EXACTE parmi {GENDERS}, le style visé par la monture),\n'
-        '"brand" (le nom de marque lu s\'il est imprimé/gravé sur le verre ou la face, ex: "Charlie Duke", "Ray-Ban" — ou null si absent/illisible, n\'invente rien),\n'
+        '"brand" (le nom de marque UNIQUEMENT si tu le vois réellement écrit/gravé sur le verre ou la face — ex format: "Ray-Ban" — sinon null. N\'invente jamais et ne recopie pas cet exemple s\'il ne correspond pas à ce que tu vois),\n'
         '"confidence" (nombre entre 0 et 1, ta confiance globale).\n'
         "Si une caractéristique est vraiment indéterminable, mets null pour cette clé."
     )
