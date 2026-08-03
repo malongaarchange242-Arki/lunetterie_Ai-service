@@ -54,7 +54,7 @@ def _parse_json_reply(text: str) -> dict[str, Any] | None:
         return None
 
 
-def _call_claude(image_path: str, prompt: str) -> dict[str, Any] | None:
+def _call_claude(image_path: str, prompt: str, model: str | None = None) -> dict[str, Any] | None:
     client = _get_client()
     if client is None:
         return None
@@ -62,7 +62,7 @@ def _call_claude(image_path: str, prompt: str) -> dict[str, Any] | None:
     try:
         data, media_type = _encode_image(image_path)
         message = client.messages.create(
-            model=settings.ANTHROPIC_MODEL,
+            model=model or settings.ANTHROPIC_MODEL,
             max_tokens=512,
             temperature=0,
             messages=[
@@ -102,7 +102,7 @@ def analyze_monture(image_path: str) -> dict[str, Any] | None:
         '"confidence" (nombre entre 0 et 1, ta confiance globale).\n'
         "Si une caractéristique est vraiment indéterminable, mets null pour cette clé."
     )
-    result = _call_claude(image_path, prompt)
+    result = _call_claude(image_path, prompt, model=settings.ANTHROPIC_MODEL_VISION)
     if not result:
         return None
 

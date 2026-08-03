@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     DEVICE: str = "cpu"
     ANTHROPIC_API_KEY: str = ""
     ANTHROPIC_MODEL: str = "claude-haiku-4-5-20251001"
+    ANTHROPIC_MODEL_VISION: str = "claude-sonnet-5"
 
     class Config:
         env_file = str(BASE_DIR / ".env")
