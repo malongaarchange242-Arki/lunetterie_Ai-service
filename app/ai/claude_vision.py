@@ -20,6 +20,22 @@ COLORS = ["Noir", "Marron", "Bleu", "Rouge", "Vert", "Gris", "Blanc", "Doré", "
 MATERIALS = ["Acétate", "Métal", "Plastique", "Titane", "Bois", "Composite", "Inox"]
 GENDERS = ["Homme", "Femme", "Enfant", "Unisexe"]
 
+# Modèles ayant retiré les paramètres de sampling (temperature/top_p/top_k) : les passer
+# renvoie une 400 "deprecated for this model". Liste des familles concernées à ce jour.
+_NO_SAMPLING_PARAMS = (
+    "claude-fable-5",
+    "claude-mythos-5",
+    "claude-opus-5",
+    "claude-opus-4-8",
+    "claude-opus-4-7",
+    "claude-sonnet-5",
+)
+
+
+def _supports_temperature(model: str) -> bool:
+    return not model.startswith(_NO_SAMPLING_PARAMS)
+
+
 _client = None
 
 
@@ -61,11 +77,11 @@ def _call_claude(image_path: str, prompt: str, model: str | None = None) -> dict
 
     try:
         data, media_type = _encode_image(image_path)
-        message = client.messages.create(
-            model=model or settings.ANTHROPIC_MODEL,
-            max_tokens=512,
-            temperature=0,
-            messages=[
+        resolved_model = model or settings.ANTHROPIC_MODEL
+        create_kwargs: dict[str, Any] = {
+            "model": resolved_model,
+            "max_tokens": 512,
+            "messages": [
                 {
                     "role": "user",
                     "content": [
@@ -74,7 +90,10 @@ def _call_claude(image_path: str, prompt: str, model: str | None = None) -> dict
                     ],
                 }
             ],
-        )
+        }
+        if _supports_temperature(resolved_model):
+            create_kwargs["temperature"] = 0
+        message = client.messages.create(**create_kwargs)
         text = "".join(block.text for block in message.content if getattr(block, "type", None) == "text")
         # print() en plus de logger.info(): pm2 capture le stdout brut quelle que soit la config
         # de logging de l'appli, donc cette ligne est garantie de sortir dans les logs.
