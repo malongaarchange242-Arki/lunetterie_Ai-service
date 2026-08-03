@@ -68,7 +68,7 @@ class GlassesPredictor:
         # Repli silencieux sur les résultats locaux ci-dessus si la clé API est absente, l'appel
         # échoue, ou que Claude ne renvoie rien d'exploitable pour un champ donné.
         try:
-            claude_result = claude_vision.analyze_monture(str(path))
+            claude_result = claude_vision.analyze_monture(crop_path or str(path))
         except Exception as exc:  # défensif: ne doit jamais faire échouer l'analyse locale
             logger.warning("Analyse Claude monture indisponible: %s", exc)
             claude_result = None

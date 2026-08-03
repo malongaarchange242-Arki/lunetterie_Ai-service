@@ -64,6 +64,7 @@ def _call_claude(image_path: str, prompt: str) -> dict[str, Any] | None:
         message = client.messages.create(
             model=settings.ANTHROPIC_MODEL,
             max_tokens=512,
+            temperature=0,
             messages=[
                 {
                     "role": "user",
