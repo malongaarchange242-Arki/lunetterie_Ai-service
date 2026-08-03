@@ -107,9 +107,11 @@ def _call_claude(image_path: str, prompt: str, model: str | None = None) -> dict
 
 
 def analyze_monture(image_path: str) -> dict[str, Any] | None:
-    """Détecte forme, couleur, matière, genre et marque depuis la photo de face de la monture.
-    La marque est souvent imprimée/gravée sur le verre ou la face (pas seulement sur la
-    branche) : ex. "Charlie Duke" imprimé sur le verre droit."""
+    """Détecte forme, couleur, matière et genre depuis la photo de face de la monture.
+    La marque n'est PAS demandée ici : mélangée à cette classification multi-critères avec
+    une seule confiance globale, elle a systématiquement été hallucinée dans nos tests (jamais
+    correcte). Voir ocr_monture_brand ci-dessous pour la lecture de marque sur le verre, en
+    appel séparé, purement OCR — comme ocr_branche, qui lui n'a jamais raté."""
     prompt = (
         "Tu analyses la photo d'une monture de lunettes pour un inventaire optique. "
         f"Réponds UNIQUEMENT avec un objet JSON strict (pas de texte autour), avec exactement ces clés :\n"
@@ -117,7 +119,6 @@ def analyze_monture(image_path: str) -> dict[str, Any] | None:
         f'"color" (une valeur EXACTE parmi {COLORS}, la couleur dominante de la monture),\n'
         f'"material" (une valeur EXACTE parmi {MATERIALS}),\n'
         f'"gender" (une valeur EXACTE parmi {GENDERS}, le style visé par la monture),\n'
-        '"brand" (le nom de marque UNIQUEMENT si tu le vois réellement écrit/gravé sur le verre ou la face — ex format: "Ray-Ban" — sinon null. N\'invente jamais et ne recopie pas cet exemple s\'il ne correspond pas à ce que tu vois),\n'
         '"confidence" (nombre entre 0 et 1, ta confiance globale).\n'
         "Si une caractéristique est vraiment indéterminable, mets null pour cette clé."
     )
@@ -128,18 +129,41 @@ def analyze_monture(image_path: str) -> dict[str, Any] | None:
     def _valid(value: Any, allowed: list[str]) -> str | None:
         return value if isinstance(value, str) and value in allowed else None
 
+    return {
+        "shape": _valid(result.get("shape"), SHAPES),
+        "color": _valid(result.get("color"), COLORS),
+        "material": _valid(result.get("material"), MATERIALS),
+        "gender": _valid(result.get("gender"), GENDERS),
+        "confidence": float(result.get("confidence") or 0.85),
+    }
+
+
+def ocr_monture_brand(image_path: str) -> dict[str, Any] | None:
+    """Lit par OCR un éventuel nom de marque imprimé/gravé sur le verre ou la face de la
+    monture (certaines marques n'inscrivent leur nom que là, pas sur la branche). Appel séparé
+    et purement OCR — volontairement pas mélangé à analyze_monture (voir sa docstring)."""
+    prompt = (
+        "Tu regardes la photo de face d'une monture de lunettes. Certaines marques impriment "
+        "ou gravent leur nom sur un des verres (texte parfois petit, en bas ou sur le côté du verre).\n"
+        "Réponds UNIQUEMENT avec un objet JSON strict, avec exactement ces clés :\n"
+        '"brand" (le nom de marque lu tel quel, UNIQUEMENT si tu vois un texte net et lisible — sinon null),\n'
+        '"confidence" (nombre entre 0 et 1).\n'
+        "La plupart des montures n'ont AUCUN texte de marque visible sur le verre : c'est le cas "
+        "normal, pas une erreur. N'invente rien : si tu ne vois pas de texte net, ou en cas du "
+        "moindre doute, mets null plutôt que de deviner."
+    )
+    result = _call_claude(image_path, prompt)
+    if not result:
+        return None
+
     def _clean(value: Any) -> str | None:
         if isinstance(value, str) and value.strip():
             return value.strip()
         return None
 
     return {
-        "shape": _valid(result.get("shape"), SHAPES),
-        "color": _valid(result.get("color"), COLORS),
-        "material": _valid(result.get("material"), MATERIALS),
-        "gender": _valid(result.get("gender"), GENDERS),
         "brand": _clean(result.get("brand")),
-        "confidence": float(result.get("confidence") or 0.85),
+        "confidence": float(result.get("confidence") or 0.7),
     }
 
 

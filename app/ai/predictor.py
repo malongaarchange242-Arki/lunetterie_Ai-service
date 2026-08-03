@@ -82,8 +82,17 @@ class GlassesPredictor:
                 result["material"] = claude_result["material"]
             if claude_result.get("gender"):
                 result["gender"] = claude_result["gender"]
-            if claude_result.get("brand"):
-                result["product_fiche"]["brand"] = claude_result["brand"]
             result["confidence"] = max(result["confidence"], claude_result.get("confidence") or 0.0)
+
+        # OCR marque sur le verre : appel séparé, purement OCR (voir docstring de
+        # ocr_monture_brand) — plus fiable que de mélanger la marque à la classification ci-dessus.
+        try:
+            brand_result = claude_vision.ocr_monture_brand(crop_path or str(path))
+        except Exception as exc:  # défensif: ne doit jamais faire échouer l'analyse locale
+            logger.warning("OCR marque monture indisponible: %s", exc)
+            brand_result = None
+
+        if brand_result and brand_result.get("brand"):
+            result["product_fiche"]["brand"] = brand_result["brand"]
 
         return result
