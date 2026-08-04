@@ -14,5 +14,11 @@ class ChatRequest(BaseModel):
     context: dict[str, Any] = {}
 
 
+class ChatAction(BaseModel):
+    type: str
+    page: str
+
+
 class ChatResponse(BaseModel):
     reply: str
+    action: ChatAction | None = None

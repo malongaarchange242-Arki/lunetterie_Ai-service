@@ -36,12 +36,44 @@ SYSTEM_PROMPT = (
     "- Réponds en phrases naturelles, SANS mise en forme markdown : pas d'astérisques, pas de "
     "listes à puces, pas de titres, pas de tableaux. Du texte parlé normal, avec des chiffres "
     "en toutes lettres ou en chiffres mais jamais de symboles décoratifs — tes réponses sont "
-    "aussi lues à voix haute par une synthèse vocale qui prononcerait ces symboles.\n\n"
+    "aussi lues à voix haute par une synthèse vocale qui prononcerait ces symboles.\n"
+    "- Si l'utilisateur te demande explicitement d'ouvrir/afficher/aller sur une page ou un "
+    "module (ex. \"ouvre le suivi des employés\", \"va sur les commandes fournisseur\", "
+    "\"montre-moi l'historique\"), utilise l'outil navigate_to_page. Ne l'utilise PAS pour de "
+    "simples questions sur ces sujets (ex. \"combien d'employés ?\" n'ouvre rien, ça répond "
+    "juste avec les données) — uniquement pour une vraie demande de navigation. Après l'appel, "
+    "confirme en une courte phrase.\n\n"
     "Données disponibles (JSON) :\n{context_json}"
 )
 
+# Pages du menu de direction.html (voir la constante MODULES dans direction.js) —
+# tenue à jour manuellement en miroir de cette liste côté frontend.
+NAVIGATE_TOOL = {
+    "name": "navigate_to_page",
+    "description": (
+        "Ouvre une page/module du tableau de bord de direction à la place de l'utilisateur, "
+        "uniquement quand il demande explicitement d'ouvrir/afficher/aller sur ce module."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "page": {
+                "type": "string",
+                "enum": [
+                    "lunettes", "enregistrement", "ca", "employes", "paiements", "commandes",
+                    "fournisseur", "compta", "planning", "reclamations", "messagerie", "historique",
+                ],
+                "description": "Identifiant de la page à ouvrir",
+            }
+        },
+        "required": ["page"],
+    },
+}
 
-def chat_reply(message: str, history: list[dict[str, Any]], context: dict[str, Any]) -> str:
+
+def chat_reply(
+    message: str, history: list[dict[str, Any]], context: dict[str, Any]
+) -> tuple[str, dict[str, Any] | None]:
     client = _get_client()
     if client is None:
         raise RuntimeError("ANTHROPIC_API_KEY non configurée")
@@ -49,7 +81,7 @@ def chat_reply(message: str, history: list[dict[str, Any]], context: dict[str, A
     model = settings.ANTHROPIC_MODEL
     system_prompt = SYSTEM_PROMPT.format(context_json=json.dumps(context, ensure_ascii=False))
 
-    messages = [{"role": m["role"], "content": m["content"]} for m in history]
+    messages: list[dict[str, Any]] = [{"role": m["role"], "content": m["content"]} for m in history]
     messages.append({"role": "user", "content": message})
 
     create_kwargs: dict[str, Any] = {
@@ -57,11 +89,41 @@ def chat_reply(message: str, history: list[dict[str, Any]], context: dict[str, A
         "system": system_prompt,
         "max_tokens": 1024,
         "messages": messages,
+        "tools": [NAVIGATE_TOOL],
     }
     if _supports_temperature(model):
         create_kwargs["temperature"] = 0.3
 
     response = client.messages.create(**create_kwargs)
+
+    action: dict[str, Any] | None = None
+    tool_use_block = next(
+        (b for b in response.content if getattr(b, "type", None) == "tool_use" and b.name == "navigate_to_page"),
+        None,
+    )
+    if tool_use_block is not None:
+        page = tool_use_block.input.get("page")
+        action = {"type": "navigate", "page": page}
+        # Round-trip standard de l'API tool-use : on renvoie un tool_result (même trivial,
+        # la navigation elle-même se fait côté frontend) pour que Claude produise ensuite
+        # une vraie phrase de confirmation plutôt qu'une réponse vide.
+        messages.append({"role": "assistant", "content": response.content})
+        messages.append(
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tool_use_block.id,
+                        "content": "Page ouverte côté interface.",
+                    }
+                ],
+            }
+        )
+        follow_up_kwargs = dict(create_kwargs)
+        follow_up_kwargs["messages"] = messages
+        response = client.messages.create(**follow_up_kwargs)
+
     reply = "".join(block.text for block in response.content if getattr(block, "type", None) == "text")
-    logger.info("Réponse chat direction: %s", reply[:200])
-    return reply.strip()
+    logger.info("Réponse chat direction: %s (action=%s)", reply[:200], action)
+    return reply.strip(), action

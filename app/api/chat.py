@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 
 from app.ai.chat import chat_reply
-from app.schemas.chat import ChatRequest, ChatResponse
+from app.schemas.chat import ChatAction, ChatRequest, ChatResponse
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
 
@@ -9,7 +9,7 @@ router = APIRouter(prefix="/assistant", tags=["assistant"])
 @router.post("/chat", response_model=ChatResponse)
 async def chat(payload: ChatRequest) -> ChatResponse:
     try:
-        reply = chat_reply(
+        reply, action = chat_reply(
             message=payload.message,
             history=[m.model_dump() for m in payload.history],
             context=payload.context,
@@ -19,4 +19,4 @@ async def chat(payload: ChatRequest) -> ChatResponse:
     except Exception as exc:  # appel Claude en échec (réseau, quota, etc.)
         raise HTTPException(status_code=502, detail=f"Appel Claude échoué: {exc}")
 
-    return ChatResponse(reply=reply)
+    return ChatResponse(reply=reply, action=ChatAction(**action) if action else None)
