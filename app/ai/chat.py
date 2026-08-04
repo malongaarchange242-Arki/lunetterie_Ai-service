@@ -39,9 +39,12 @@ SYSTEM_PROMPT = (
     "aussi lues à voix haute par une synthèse vocale qui prononcerait ces symboles.\n"
     "- Si l'utilisateur te demande explicitement d'ouvrir/afficher/aller sur une page ou un "
     "module (ex. \"ouvre le suivi des employés\", \"va sur les commandes fournisseur\", "
-    "\"montre-moi l'historique\"), utilise l'outil navigate_to_page. Ne l'utilise PAS pour de "
-    "simples questions sur ces sujets (ex. \"combien d'employés ?\" n'ouvre rien, ça répond "
-    "juste avec les données) — uniquement pour une vraie demande de navigation. Après l'appel, "
+    "\"montre-moi l'historique\"), utilise l'outil navigate_to_page UNE SEULE FOIS. Ne "
+    "l'utilise PAS pour de simples questions sur ces sujets (ex. \"combien d'employés ?\" "
+    "n'ouvre rien, ça répond juste avec les données) — uniquement pour une vraie demande de "
+    "navigation. L'interface ne peut afficher qu'une seule page à la fois : si plusieurs "
+    "pages sont demandées en même temps, choisis la plus pertinente, ouvre seulement "
+    "celle-là, et précise dans ta réponse que tu n'as ouvert que celle-ci. Après l'appel, "
     "confirme en une courte phrase.\n\n"
     "Données disponibles (JSON) :\n{context_json}"
 )
@@ -97,16 +100,17 @@ def chat_reply(
     response = client.messages.create(**create_kwargs)
 
     action: dict[str, Any] | None = None
-    tool_use_block = next(
-        (b for b in response.content if getattr(b, "type", None) == "tool_use" and b.name == "navigate_to_page"),
-        None,
-    )
-    if tool_use_block is not None:
-        page = tool_use_block.input.get("page")
-        action = {"type": "navigate", "page": page}
-        # Round-trip standard de l'API tool-use : on renvoie un tool_result (même trivial,
-        # la navigation elle-même se fait côté frontend) pour que Claude produise ensuite
-        # une vraie phrase de confirmation plutôt qu'une réponse vide.
+    tool_use_blocks = [b for b in response.content if getattr(b, "type", None) == "tool_use"]
+    if tool_use_blocks:
+        # L'interface ne peut ouvrir qu'une seule page à la fois : on ne retient que le
+        # premier appel comme action réelle. Mais l'API exige un tool_result pour CHAQUE
+        # tool_use de la réponse (ex. le modèle a appelé l'outil une fois par page demandée
+        # si l'utilisateur en a cité plusieurs) — on doit tous les acquitter, pas que le
+        # premier, sinon l'appel suivant est rejeté avec une 400.
+        first_navigate = next((b for b in tool_use_blocks if b.name == "navigate_to_page"), None)
+        if first_navigate is not None:
+            action = {"type": "navigate", "page": first_navigate.input.get("page")}
+
         messages.append({"role": "assistant", "content": response.content})
         messages.append(
             {
@@ -114,9 +118,14 @@ def chat_reply(
                 "content": [
                     {
                         "type": "tool_result",
-                        "tool_use_id": tool_use_block.id,
-                        "content": "Page ouverte côté interface.",
+                        "tool_use_id": b.id,
+                        "content": (
+                            "Page ouverte côté interface."
+                            if b is first_navigate
+                            else "Une seule page peut être ouverte à la fois ; celle-ci ne l'a pas été."
+                        ),
                     }
+                    for b in tool_use_blocks
                 ],
             }
         )
