@@ -21,4 +21,4 @@ class ChatAction(BaseModel):
 
 class ChatResponse(BaseModel):
     reply: str
-    action: ChatAction | None = None
+    actions: list[ChatAction] = []

@@ -9,7 +9,7 @@ router = APIRouter(prefix="/assistant", tags=["assistant"])
 @router.post("/chat", response_model=ChatResponse)
 async def chat(payload: ChatRequest) -> ChatResponse:
     try:
-        reply, action = chat_reply(
+        reply, actions = chat_reply(
             message=payload.message,
             history=[m.model_dump() for m in payload.history],
             context=payload.context,
@@ -19,4 +19,4 @@ async def chat(payload: ChatRequest) -> ChatResponse:
     except Exception as exc:  # appel Claude en échec (réseau, quota, etc.)
         raise HTTPException(status_code=502, detail=f"Appel Claude échoué: {exc}")
 
-    return ChatResponse(reply=reply, action=ChatAction(**action) if action else None)
+    return ChatResponse(reply=reply, actions=[ChatAction(**a) for a in actions])

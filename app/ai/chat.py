@@ -39,13 +39,12 @@ SYSTEM_PROMPT = (
     "aussi lues à voix haute par une synthèse vocale qui prononcerait ces symboles.\n"
     "- Si l'utilisateur te demande explicitement d'ouvrir/afficher/aller sur une page ou un "
     "module (ex. \"ouvre le suivi des employés\", \"va sur les commandes fournisseur\", "
-    "\"montre-moi l'historique\"), utilise l'outil navigate_to_page UNE SEULE FOIS. Ne "
-    "l'utilise PAS pour de simples questions sur ces sujets (ex. \"combien d'employés ?\" "
-    "n'ouvre rien, ça répond juste avec les données) — uniquement pour une vraie demande de "
-    "navigation. L'interface ne peut afficher qu'une seule page à la fois : si plusieurs "
-    "pages sont demandées en même temps, choisis la plus pertinente, ouvre seulement "
-    "celle-là, et précise dans ta réponse que tu n'as ouvert que celle-ci. Après l'appel, "
-    "confirme en une courte phrase.\n\n"
+    "\"montre-moi l'historique\"), utilise l'outil navigate_to_page. Ne l'utilise PAS pour de "
+    "simples questions sur ces sujets (ex. \"combien d'employés ?\" n'ouvre rien, ça répond "
+    "juste avec les données) — uniquement pour une vraie demande de navigation. Si plusieurs "
+    "pages sont demandées dans le même message, appelle l'outil une fois par page, dans "
+    "l'ordre où l'utilisateur les a citées : l'interface les affichera l'une après l'autre. "
+    "Après l'appel (ou les appels), confirme en une courte phrase.\n\n"
     "Données disponibles (JSON) :\n{context_json}"
 )
 
@@ -76,7 +75,7 @@ NAVIGATE_TOOL = {
 
 def chat_reply(
     message: str, history: list[dict[str, Any]], context: dict[str, Any]
-) -> tuple[str, dict[str, Any] | None]:
+) -> tuple[str, list[dict[str, Any]]]:
     client = _get_client()
     if client is None:
         raise RuntimeError("ANTHROPIC_API_KEY non configurée")
@@ -99,32 +98,21 @@ def chat_reply(
 
     response = client.messages.create(**create_kwargs)
 
-    action: dict[str, Any] | None = None
+    actions: list[dict[str, Any]] = []
     tool_use_blocks = [b for b in response.content if getattr(b, "type", None) == "tool_use"]
     if tool_use_blocks:
-        # L'interface ne peut ouvrir qu'une seule page à la fois : on ne retient que le
-        # premier appel comme action réelle. Mais l'API exige un tool_result pour CHAQUE
-        # tool_use de la réponse (ex. le modèle a appelé l'outil une fois par page demandée
-        # si l'utilisateur en a cité plusieurs) — on doit tous les acquitter, pas que le
-        # premier, sinon l'appel suivant est rejeté avec une 400.
-        first_navigate = next((b for b in tool_use_blocks if b.name == "navigate_to_page"), None)
-        if first_navigate is not None:
-            action = {"type": "navigate", "page": first_navigate.input.get("page")}
+        # Une action par tool_use, dans l'ordre d'appel : le frontend les ouvre l'une après
+        # l'autre. L'API exige un tool_result pour CHAQUE tool_use de la réponse, sans quoi
+        # l'appel suivant est rejeté avec une 400.
+        navigate_blocks = [b for b in tool_use_blocks if b.name == "navigate_to_page"]
+        actions = [{"type": "navigate", "page": b.input.get("page")} for b in navigate_blocks]
 
         messages.append({"role": "assistant", "content": response.content})
         messages.append(
             {
                 "role": "user",
                 "content": [
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": b.id,
-                        "content": (
-                            "Page ouverte côté interface."
-                            if b is first_navigate
-                            else "Une seule page peut être ouverte à la fois ; celle-ci ne l'a pas été."
-                        ),
-                    }
+                    {"type": "tool_result", "tool_use_id": b.id, "content": "Page ouverte côté interface."}
                     for b in tool_use_blocks
                 ],
             }
@@ -134,5 +122,5 @@ def chat_reply(
         response = client.messages.create(**follow_up_kwargs)
 
     reply = "".join(block.text for block in response.content if getattr(block, "type", None) == "text")
-    logger.info("Réponse chat direction: %s (action=%s)", reply[:200], action)
-    return reply.strip(), action
+    logger.info("Réponse chat direction: %s (actions=%s)", reply[:200], actions)
+    return reply.strip(), actions
